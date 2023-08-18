@@ -11,3 +11,7 @@ module.exports = {
     }
   }
 };
+
+  // "devDependencies": {
+  //   "@/hardhat-toolbox": "^3.0.0"
+  // }
