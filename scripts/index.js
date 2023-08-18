@@ -26,7 +26,7 @@ main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
-
+// npx hardhat run scripts/index.js
 
     // var ethers = require('ethers');  
     // var crypto = require('crypto');

@@ -4,48 +4,56 @@ pragma solidity ^0.8.19;
 contract LoyaltyProgram {
     
     using SafeMath for uint256;
+    using Id for uint256;
 
     uint256 private nonce = 0;
     address public owner;
     mapping(address => bool) private isMerchant;
+    mapping(address => string) private merchantName;
 
 
     mapping(address => Coin[]) private loyaltyPoint;
     struct Coin {
         address merchant;
-        uint256 value; // Decaying value
-        uint256 decayingRedeemed; // Redeemed before decay
+        uint256 value; // Decaying
+        uint256 redeem; // Redeemed before decay
     }
 
     mapping(address => Reward[]) private rewards;
     struct Reward {
         uint256 id;
         string title;
-        string [] description;
+        string desc;
+        string imgURL;
         uint256 coinValue;
-        uint256 minimumCoin;
-        uint256 discountValue;
+        uint256 minCoin; // Condition of loyalty level
+        uint256 minOdrVal; // can be 0 for ( ex ) Fridge
+        uint256 disPercent; // 100 % for price based discount
+        uint256 disMaxVal; // Price of discount
+        uint256 expiryTime;
+        uint256 timestamp;
+        uint256 quantLmt;
+        uint256 quantOver;
     }
 
     mapping(address => Order[]) private orders;
     struct Order {
-        address [] merchants;
-        uint256 [] merchantValue;
+        uint256 id;
+        address merchant;
         uint256 orderValue;
-        uint256 maxReturnPeriod;
+        uint256 delay;
         uint256 timestamp;
     }
 
     struct Tokenomics{
-        uint256 minOrderValue;
+        uint256 minOdrVal;
         uint256 maxCoinValue;
-        uint256 currencyPerCoin;
+        uint256 currPerCoin;
     }
-    Tokenomics ownerTokenomics;
-    Tokenomics merchantTokenomics;
+    Tokenomics merchTokenomics = Tokenomics(200, 50, 50);
 
-    mapping(address =>  QueueLibrary.Queue) private decayQueue;
     using QueueLibrary for QueueLibrary.Queue;
+    mapping(address =>  QueueLibrary.Queue) private decayQueue;
     uint256 decayDays = 180;
     
     mapping(address => Transaction[]) private transactions;
@@ -53,21 +61,23 @@ contract LoyaltyProgram {
         address merchant;
         string status;
         uint256 value;
-        DateTimeLibrary.DateTime timestamp;
+        DtLibrary.Date timestamp;
     }
-    using DateTimeLibrary for DateTimeLibrary.DateTime;
+    using DtLibrary for DtLibrary.Date;
 
     // event Transfer(address indexed from, address indexed to, uint256 value);
 
 /************************************ Roles and Permisssion ***********************************************/
 
-    constructor() { 
+    constructor(string memory name) { 
         owner = msg.sender;
         isMerchant[owner] = true;
+        merchantName[owner] = name;
     }
 
-    function setMerchant() external {
+    function setMerchant(string memory name) external {
         isMerchant[msg.sender] = true;
+        merchantName[msg.sender] = name;
     }
 
     modifier onlyOwner() {
@@ -87,20 +97,12 @@ contract LoyaltyProgram {
 
 /************************************ Tokenomics ***********************************************/
 
-    function setMerchantTokenomics(uint256 minOrderValue, uint256 maxCoinValue, uint256 currencyToUnitCoin) external onlyOwner {
-        merchantTokenomics = Tokenomics(minOrderValue,maxCoinValue,currencyToUnitCoin);
+    function setMerchantTokenomics(uint256 minOdrVal, uint256 maxCoinValue, uint256 currPerCoin) external onlyOwner {
+        merchTokenomics = Tokenomics(minOdrVal,maxCoinValue,currPerCoin);
     }
 
     function getMerchantTokenomics() external view returns(Tokenomics memory){
-        return merchantTokenomics;
-    }
-
-    function setOwnerTokenomics(uint256 minOrderValue, uint256 maxCoinValue, uint256 currencyToUnitCoin) external onlyOwner {
-        ownerTokenomics = Tokenomics(minOrderValue,maxCoinValue,currencyToUnitCoin);
-    }
-
-    function getOwnerTokenomics() external view returns(Tokenomics memory){
-        return ownerTokenomics;
+        return merchTokenomics;
     }
 
     function setDecayDays(uint256 _decayDays) external onlyOwner{
@@ -113,60 +115,89 @@ contract LoyaltyProgram {
 
 /************************************ Reward ***********************************************/
 
-    function addReward(string memory title, uint256 coinValue,uint256 minimumCoin, uint256 discountValue) external onlyMerchant {
-        uint256 uniqueId = generateId();
-        rewards[msg.sender].push(Reward(uniqueId, title, coinValue, minimumCoin, discountValue));
+    function addReward(
+        string memory title, string memory desc, string memory imgURL, 
+        uint256 coinValue, uint256 minCoin, uint256 minimumOrderValue, 
+        uint256 disPercent, uint256 disMaxVal, 
+        uint256 expiryInSeconds, uint256 quantLmt) external onlyMerchant {
+
+        uint256 uniqueId = nonce.generateId();
+        rewards[msg.sender].push(Reward(uniqueId, title,  desc,  imgURL,  coinValue, minCoin,  minimumOrderValue,  disPercent,  disMaxVal,  expiryInSeconds, block.timestamp,  quantLmt, 0));
     }
 
     function deleteReward(uint256 id) external onlyMerchant {
-
-        uint256 rewardSize = rewards[msg.sender].length;
-
         uint256 _rewardIndex = getRewardIndex(msg.sender, id);
+        deleteReI(_rewardIndex);
+    }
+
+    function deleteReI(uint256 index) internal onlyMerchant {
+        uint256 rewardSize = rewards[msg.sender].length;
         
-        rewards[msg.sender][_rewardIndex] = rewards[msg.sender][rewardSize -1];
+        rewards[msg.sender][index] = rewards[msg.sender][rewardSize -1];
         rewards[msg.sender].pop();
     }
 
-    function fetchAllReward(address merchant) external view returns(Reward [] memory) {
-        return rewards[merchant];
+    function expireReward(address merchant) external {
+        uint256 rewardSize = rewards[merchant].length;
+        for (uint256 i=0; i<rewardSize; i++) 
+        {
+            Reward memory reward = rewards[merchant][i];
+            uint256 elapsedTime = block.timestamp.sub(reward.timestamp);
+            uint256 elapsedSeconds = elapsedTime * 1 seconds;
+            if(reward.expiryTime <= elapsedSeconds || reward.quantLmt <= reward.quantOver){
+                deleteReI(i);
+                rewardSize = rewardSize.sub(1);
+                i = i.sub(1);
+            }
+        }
     }
 
-    function fetchRedeemableReward(address merchant) external onlyCustomer view returns(Reward [] memory, uint256){
-        uint256 _merchantBalance = merchantWiseBalance(merchant);
+    function fetchAllReward(address merchant) external view returns(Reward [] memory, string memory) { // name error
+        return (rewards[merchant], merchantName[merchant]);
+    }
 
+    function fetchRedeemableReward(address merchant, uint256 orderValue) external onlyCustomer  returns(Reward [] memory, uint256, string memory name){
+        uint256 _coinIndex = coinIndex(merchant);
         uint256 rewardSize = rewards[merchant].length;
         Reward [] memory redeemableList = new Reward[] (rewardSize);
         uint256 index = 0;
         for (uint256 i=0; i < rewardSize; i++){
-
-            Reward memory reward = rewards[merchant][i];
-            if(_merchantBalance >= reward.minimumCoin){
+            bool redemable = checkReedemable(merchant, i, orderValue, _coinIndex);
+            if(redemable){
+                Reward memory reward = rewards[merchant][i];
                 redeemableList[index] = reward;
                 index++;
             }
         }
-        return (redeemableList, index);
+        return (redeemableList, index, merchantName[merchant]);
     }
 
-    function redeemReward(address merchant, uint256 id) external onlyCustomer returns(bool){
-        
-        for (uint256 i=0; i<loyaltyPoint[msg.sender].length; i++){
-            Coin memory coin = loyaltyPoint[msg.sender][i];
-            if(coin.merchant == merchant){
-                uint256 index = getRewardIndex(merchant, id);
-                Reward memory reward = rewards[merchant][index];
-                
-                require(coin.value >= reward.coinValue, "Insufficient Coins");
-                require(coin.value >= reward.minimumCoin, "Minimum Coin required");
-                loyaltyPoint[msg.sender][i].value = loyaltyPoint[msg.sender][i].value.sub(reward.coinValue);
-                loyaltyPoint[msg.sender][i].decayingRedeemed += reward.coinValue;
-                
-                logTransaction(merchant, "Redeem", reward.coinValue);
-                break;
-            }
+    function checkReedemable(address merchant, uint256 i, uint256 orderValue, uint256 _coinIndex) internal onlyCustomer view returns(bool){
+        bool state = false;
+        uint256 coinBalance = loyaltyPoint[msg.sender][_coinIndex].value;
+        Reward memory reward = rewards[merchant][i];
+        if(coinBalance >= reward.minCoin && 
+        coinBalance >= reward.coinValue && 
+        orderValue >= reward.minOdrVal)state = true;
+        return state;
+    }
+
+    function redeemReward(address merchant, uint256 id, uint256 orderValue) external onlyCustomer returns(uint256){
+        uint256 payableAmount = orderValue;
+        uint256 index = getRewardIndex(merchant, id);
+        uint256 _coinIndex = coinIndex(merchant);
+        bool redemable = checkReedemable(merchant, index, orderValue, _coinIndex);
+        if(redemable){
+            Reward memory reward = rewards[merchant][index];
+            uint256 discount = reward.disPercent * payableAmount / 100;
+            if(discount > reward.disMaxVal) discount = reward.disMaxVal;
+            payableAmount = payableAmount.sub(discount);
+            removeCoin(_coinIndex, reward.coinValue);
+            loyaltyPoint[msg.sender][_coinIndex].redeem += reward.coinValue;
+            rewards[merchant][index].quantOver = rewards[merchant][index].quantOver.add(1);
+            logTransaction(merchant, "Redeem", reward.coinValue);
         }
-        return true;
+        return payableAmount;
     }
 
 /************************************ Reward Utils ***********************************************/
@@ -187,42 +218,50 @@ contract LoyaltyProgram {
         return index;
     }
 
-    function merchantWiseBalance(address merchant) internal view onlyCustomer returns (uint256){
-
-        uint256 _merchantBalance = 0;
-
-        for (uint256 i=0; i<loyaltyPoint[msg.sender].length; i++){
-            Coin memory coin = loyaltyPoint[msg.sender][i];
-            if(coin.merchant == merchant){
-                _merchantBalance = coin.value;
-                break;
-            }
-        }
-        return _merchantBalance;
-    }
-
-    function generateId() internal returns (uint256){
-        uint256 uniqueId = uint256(keccak256(abi.encodePacked(block.timestamp, address(this), nonce)));
-        nonce++;
-        return uniqueId;
-    }
-
 /************************************ Customer Interaction ***********************************************/
 
-    function customerBalance() external onlyCustomer  returns(Coin [] memory)   {
+    function customerBalance() external onlyCustomer view returns(Coin [] memory)   {
+        return loyaltyPoint[msg.sender];
+    }
+    
+    function updateBalance() external onlyCustomer{
         decayCoin();
         checkEarningStatus();
-        return loyaltyPoint[msg.sender];
-        // return 4;
     }
 
-    function customerTransaction() public view onlyCustomer returns(Transaction [] memory) {
+    function customerTransaction() external view onlyCustomer returns(Transaction [] memory) {
         return transactions[msg.sender];
     }
 
     // Coin earning method
-    function purchase(address [] calldata merchants, uint256 [] calldata merchantValue, uint256 orderValue, uint256 maxReturnPeriod) external onlyCustomer {
-        orders[msg.sender].push(Order(merchants, merchantValue, orderValue, maxReturnPeriod, block.timestamp));
+    function purchase(address merchant,uint256 orderValue, uint256 delay) external onlyCustomer {
+        uint256 uniqueId = nonce.generateId();
+        orders[msg.sender].push(Order(uniqueId, merchant, orderValue, delay, block.timestamp));
+    }
+
+    function getOrders() external view onlyCustomer returns(Order [] memory) {
+        return orders[msg.sender];
+    }
+
+    function cancelOrder(uint256 id) external onlyCustomer returns(bool){
+        uint256 i = getOrderIndex(id);
+        deleteSettledOrder(i);
+        return true;
+    }
+
+    function getOrderIndex(uint256 id) internal onlyCustomer view returns(uint256){
+        uint256 index;
+        uint256 orderSize = orders[msg.sender].length;
+        for (uint256 i=0; i<orderSize; i++) 
+        {
+            Order memory order = orders[msg.sender][i];
+
+            if(order.id == id){
+                index = i;
+                break;
+            }
+        }
+        return index;
     }
 
 /************************************ Earning and Decay ***********************************************/
@@ -234,11 +273,12 @@ contract LoyaltyProgram {
             Order memory order = orders[msg.sender][i];
 
             uint256 elapsedTime = block.timestamp - order.timestamp;
-            uint256 elapsedDays = elapsedTime * 1 days;
-            if(order.maxReturnPeriod <= elapsedDays){
-
-                addCoinFromOwner(order.orderValue);
-                addCoinFromMerchant(order);
+            uint256 elapsedSeconds = elapsedTime * 1 seconds;
+            if(order.delay <= elapsedSeconds){
+                if(order.orderValue >= merchTokenomics.minOdrVal){
+                    uint256 earnedCoin = addEarnedCoin(order.orderValue, owner);
+                    updateLogAndDecay( earnedCoin, order.merchant);
+                }
                 
                 orderSize = deleteSettledOrder(i);
                 i = i.sub(1);
@@ -254,29 +294,16 @@ contract LoyaltyProgram {
         return orderSize.sub(1);
     }
 
-    function addCoinFromOwner(uint256 orderValue) internal onlyCustomer {
-        if(orderValue >= ownerTokenomics.minOrderValue){
-            uint256 earnedCoin = addEarnedCoin(orderValue, ownerTokenomics, owner);
-            updateLogAndDecay( earnedCoin, owner);
-        }
-    }
-
-    function addCoinFromMerchant(Order memory order) internal onlyCustomer {
-        for (uint256 j=0; j<order.merchants.length; j++) 
-        {
-            if(order.merchantValue[j] >= merchantTokenomics.minOrderValue){
-                uint256 earnedCoin = addEarnedCoin(order.merchantValue[j], merchantTokenomics, order.merchants[j]);
-                updateLogAndDecay( earnedCoin, order.merchants[j]);
-            }
-        }
-    }
-
-    function addEarnedCoin(uint256 orderValue, Tokenomics memory _merchantTokenomics, address merchant ) internal onlyCustomer returns(uint256) {
-        uint256 earnedCoin = orderValue / _merchantTokenomics.currencyPerCoin;
-        earnedCoin = earnedCoin <= _merchantTokenomics.maxCoinValue ? earnedCoin : _merchantTokenomics.maxCoinValue;
+    function addEarnedCoin(uint256 orderValue, address merchant ) internal onlyCustomer returns(uint256) {
+        uint256 earnedCoin = orderValue / merchTokenomics.currPerCoin;
+        earnedCoin = earnedCoin <= merchTokenomics.maxCoinValue ? earnedCoin : merchTokenomics.maxCoinValue;
         uint256 ownerCoinIndex = coinIndex(merchant);
         loyaltyPoint[msg.sender][ownerCoinIndex].value += earnedCoin;
         return earnedCoin;
+    }
+
+    function removeCoin(uint256 i, uint256 value)internal onlyCustomer{
+        loyaltyPoint[msg.sender][i].value = loyaltyPoint[msg.sender][i].value.sub(value);
     }
 
     function updateLogAndDecay(uint256 earnedCoin, address merchant)internal onlyCustomer{
@@ -286,7 +313,7 @@ contract LoyaltyProgram {
 
 
     function logTransaction(address merchant, string memory status, uint256 value) internal onlyCustomer{
-        DateTimeLibrary.DateTime memory date = DateTimeLibrary.getDateTime(block.timestamp);
+        DtLibrary.Date memory date = DtLibrary.getDate(block.timestamp);
         transactions[msg.sender].push(Transaction(merchant, status, value, date));
     }
 
@@ -314,19 +341,18 @@ contract LoyaltyProgram {
 
         QueueLibrary.Item memory headItem = queue.getFront();
         uint256 elapsedTime = block.timestamp.sub(headItem.timestamp);
-        uint256 elapsedDays = elapsedTime * 1 days;
-        while (elapsedDays >= decayDays) {
+        uint256 elapsedSeconds = elapsedTime * 1 seconds;
+        while (elapsedSeconds >= decayDays) {
 
             uint256 decayAmount = headItem.value;
             uint256 _coinIndex = coinIndex(headItem.merchant);
             
-            uint256 redeemedValue = loyaltyPoint[msg.sender][_coinIndex].decayingRedeemed;
+            uint256 redeemedValue = loyaltyPoint[msg.sender][_coinIndex].redeem;
             if(redeemedValue <= decayAmount){
-                loyaltyPoint[msg.sender][_coinIndex].decayingRedeemed = 0;
+                loyaltyPoint[msg.sender][_coinIndex].redeem = 0;
                 decayAmount = decayAmount.sub(redeemedValue);
             }
-            loyaltyPoint[msg.sender][_coinIndex].value = loyaltyPoint[msg.sender][_coinIndex].value.sub(decayAmount);
-            
+            removeCoin(_coinIndex, decayAmount);
             logTransaction(headItem.merchant, "Decay", decayAmount);
 
             queue.dequeue();
@@ -334,13 +360,22 @@ contract LoyaltyProgram {
             if(queue.size() == 0) break;
             headItem = queue.getFront();
             elapsedTime = block.timestamp.sub(headItem.timestamp);
-            elapsedDays = elapsedTime * 1 days;
+            elapsedSeconds = elapsedTime * 1 seconds;
         }
         return true;
     }
 }
 
+
 /************************************ Libraries ***********************************************/
+
+library Id{
+    function generateId(uint256 nonce) internal view returns (uint256){
+        uint256 uniqueId = uint256(keccak256(abi.encodePacked(block.timestamp, address(this), nonce)));
+        nonce++;
+        return uniqueId;
+    }
+}
 
 library SafeMath { 
     function sub(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -391,20 +426,16 @@ library QueueLibrary {
         require(queue.rear > queue.front, "Queue is empty");
         return queue.elements[queue.front];
     }
-
-    function updateFront(Queue storage queue, Item memory value) internal {
-        queue.elements[queue.front] = value;
-    }
 }
 
-library DateTimeLibrary {
-    struct DateTime {
+library DtLibrary {
+    struct Date {
         uint16 year;
         uint8 month;
         uint8 day;
     }
 
-    function getDateTime(uint256 timestamp) internal pure returns (DateTime memory dt) {
+    function getDate(uint256 timestamp) internal pure returns (Date memory dt) {
         uint256 secondsInDay = 86400;
         dt.year = uint16(1970 + ((timestamp / secondsInDay / 365) - 2));
         uint256 yearTimestamp = timestamp - ((dt.year - 1970 + 2) * secondsInDay * 365);
