@@ -2,7 +2,33 @@ const jwt = require("jsonwebtoken");
 const hre = require("hardhat");
 const ContractJson = require("../artifacts/contracts/LoyaltyProgram.sol/LoyaltyProgram.json");
 const abi = ContractJson.abi;
+class Reward{
+    constructor(arr){
+        this.id = arr[0],
+        this.title = arr[1], 
+        this.desc = arr[2].split('\\n'), 
+        this.imgURL = arr[3], 
+        this.coinValue = arr[4], 
+        this.minimumCoin = arr[5], 
+        this.minimumOrderValue = arr[6], 
+        this.discountPercent = arr[7], 
+        this.discountMaxVal = arr[8], 
+        this.expiryInSeconds = arr[9], 
+        this.timestamp = arr[10],
+        this.quantityLimit = arr[11],
+        this.quantityOver = arr[12]
+    }
+}
 
+class Transaction{
+    constructor(arr){
+        this.merchant = arr[0];
+        this.status = arr[1];
+        this.value = arr[2];
+        // this.timestamp = `${arr[3]} ${arr[4]} ${arr[5]}`;
+    }
+}
+// privateKey
 module.exports.tokenize = async function tokenize(req, res) {
     try {
         const payload = {
@@ -26,7 +52,7 @@ module.exports.tokenize = async function tokenize(req, res) {
         })
     }
 }
-
+// middleware
 module.exports.auth = async function(req, res, next){
     const token = req.header('Authorization');
     if(!token){
@@ -51,13 +77,13 @@ module.exports.auth = async function(req, res, next){
         });
     }
 }
-// string memory name
+
 module.exports.setMerchant = async function (req, res, next) {
     try {
-        if (!req.body.isMerchant) {
+        if(!req.body.isMerchant) {
             next();
         }
-        const {name} = req.body;
+        
         const alchemy = new hre.ethers.AlchemyProvider(
             'maticmum',
             process.env.ALCHEMY_API_KEY
@@ -68,7 +94,7 @@ module.exports.setMerchant = async function (req, res, next) {
             abi,
             userWallet
         )
-        const output = await Contract.setMerchant(name);
+        const output = await Contract.setMerchant();
         await output;
         next();
     } catch (err) {
@@ -96,7 +122,7 @@ module.exports.setMerchantTokenomics = async function (req, res) {
 
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            response: setTx1
         });
     } catch (err) {
         res.status(500).json({
@@ -119,60 +145,13 @@ module.exports.getMerchantTokenomics = async function (req, res) {
         )
         const setTx1 = await Contract.getMerchantTokenomics();
         await setTx1;
+        const response = setTx1.toString().split(',');
+        
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1.toString()
-        });
-    } catch (err) {
-        res.status(500).json({
-            msg: `Server Error: ${err}`
-        })
-    }
-}
-// uint256 _decayDays
-module.exports.setDecayDays = async function (req, res) {
-    try {
-        const {_decayDays} = req.body;
-        const alchemy = new hre.ethers.AlchemyProvider(
-            'maticmum',
-            process.env.ALCHEMY_API_KEY
-        );
-        const userWallet = new hre.ethers.Wallet(req.user.id, alchemy);
-        const Contract = new hre.ethers.Contract(
-            process.env.CONTRACT_ADDRESS,
-            abi,
-            userWallet
-        )
-        const setTx1 = await Contract.setDecayDays(_decayDays);
-        await setTx1;
-        res.status(200).json({
-            msg: 'Success!',
-            token: setTx1
-        });
-    } catch (err) {
-        res.status(500).json({
-            msg: `Server Error: ${err}`
-        })
-    }
-}
-
-module.exports.getDecayDays = async function (req, res) {
-    try {
-        const alchemy = new hre.ethers.AlchemyProvider(
-            'maticmum',
-            process.env.ALCHEMY_API_KEY
-        );
-        const userWallet = new hre.ethers.Wallet(req.user.id, alchemy);
-        const Contract = new hre.ethers.Contract(
-            process.env.CONTRACT_ADDRESS,
-            abi,
-            userWallet
-        )
-        const setTx1 = await Contract.getDecayDays();
-        await setTx1;
-        res.status(200).json({
-            msg: 'Success!',
-            token: setTx1.toString()
+            minOrderValue : response[0],  
+            maxCoinValue : response[1],  
+            currencyToUnitCoin : response[2]
         });
     } catch (err) {
         res.status(500).json({
@@ -186,7 +165,7 @@ module.exports.getDecayDays = async function (req, res) {
 // uint256 expiryInSeconds, uint256 quantLmt
 module.exports.addReward = async function (req, res) {
     try {
-        const {title, desc, imgURL, coinValue, minimumCoin, minimumOrderValue, disPercent, disMaxVal, expiryInSeconds, quantLmt} = req.body;
+        const {title, desc, imgURL, coinValue, minimumCoin, minimumOrderValue, disPercent, disMaxVal, quantLmt} = req.body;
         const alchemy = new hre.ethers.AlchemyProvider(
             'maticmum',
             process.env.ALCHEMY_API_KEY
@@ -197,11 +176,11 @@ module.exports.addReward = async function (req, res) {
             abi,
             userWallet
         )
-        const setTx1 = await Contract.addReward(title, desc, imgURL, coinValue, minimumCoin, minimumOrderValue, disPercent, disMaxVal, expiryInSeconds, quantLmt);
+        const setTx1 = await Contract.addReward(title, desc, imgURL, coinValue, minimumCoin, minimumOrderValue, disPercent, disMaxVal, 0, quantLmt);
         await setTx1;
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            response: setTx1
         });
     } catch (err) {
         res.status(500).json({
@@ -227,7 +206,7 @@ module.exports.deleteReward = async function (req, res) {
         await setTx1;
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            response: setTx1
         });
     } catch (err) {
         res.status(500).json({
@@ -249,39 +228,22 @@ module.exports.fetchAllReward = async function (req, res) { // Not working
             abi,
             userWallet
         )
-        const setTx = await Contract.expireReward();
-        await setTx;
         const setTx1 = await Contract.fetchAllReward(merchant)
-        await setTx1.toString()
-        res.status(200).json({
-            msg: 'Success!',
-            token: setTx1
-        });
-    } catch (err) {
-        res.status(500).json({
-            msg: `Server Error: ${err}`
-        })
-    }
-}
-// address merchant, uint256 orderValue
-module.exports.fetchRedeemableReward = async function (req, res) {
-    try {
-        const {merchant, orderValue} = req.body;
-        const alchemy = new hre.ethers.AlchemyProvider(
-            'maticmum',
-            process.env.ALCHEMY_API_KEY
-        );
-        const userWallet = new hre.ethers.Wallet(req.user.id, alchemy);
-        const Contract = new hre.ethers.Contract(
-            process.env.CONTRACT_ADDRESS,
-            abi,
-            userWallet
-        )
-        const setTx1 = await Contract.fetchRedeemableReward(merchant, orderValue);
         await setTx1;
+        const str = setTx1.toString();
+        // console.log(str);
+        const Arr = str.split(",")
+        const length = Arr.length;
+        let response = [];
+        for(let i=0; i<length; i+=13){
+            const resp = Arr.slice(i,i+13);
+            const rewardObj = new Reward(resp);
+            response.push(rewardObj);
+        }
+
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            reward: response,
         });
     } catch (err) {
         res.status(500).json({
@@ -307,7 +269,7 @@ module.exports.redeemReward = async function (req, res) {
         await setTx1;
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            response: setTx1
         });
     } catch (err) {
         res.status(500).json({
@@ -318,6 +280,7 @@ module.exports.redeemReward = async function (req, res) {
 
 module.exports.customerBalance = async function (req, res) {
     try {
+        const {merchant} = req.body
         const alchemy = new hre.ethers.AlchemyProvider(
             'maticmum',
             process.env.ALCHEMY_API_KEY
@@ -328,13 +291,11 @@ module.exports.customerBalance = async function (req, res) {
             abi,
             userWallet
         )
-        const setTx1 = await Contract.updateBalance();
-        await setTx1;
-        const setTx2 = await Contract.customerBalance();
+        const setTx2 = await Contract.customerBalance(merchant);
         await setTx2;
         res.status(200).json({
             msg: 'Success!',
-            token: setTx2
+            response: setTx2.toString()
         });
     } catch (err) {
         res.status(500).json({
@@ -357,9 +318,19 @@ module.exports.customerTransaction = async function (req, res) {
         )
         const setTx1 = await Contract.customerTransaction();
         await setTx1;
+        const str = setTx1.toString();
+        
+        const Arr = str.split(",")
+        const length = Arr.length;
+        let response = [];
+        for(let i=0; i<length; i+=6){
+            const resp = Arr.slice(i,i+6);
+            const Obj = new Transaction(resp);
+            response.push(Obj);
+        }
         res.status(200).json({
             msg: 'Success!',
-            token: setTx1
+            response: response
         });
     } catch (err) {
         res.status(500).json({
@@ -370,34 +341,8 @@ module.exports.customerTransaction = async function (req, res) {
 // address merchants, uint256 orderValue, uint256 maxReturnPeriod
 module.exports.purchase = async function (req, res) {
     try {
-        const {merchant,  orderValue,  maxReturnPeriod} = req.body;
-        const alchemy = new hre.ethers.AlchemyProvider(
-            'maticmum',
-            process.env.ALCHEMY_API_KEY
-        );
-        const userWallet = new hre.ethers.Wallet(req.user.id, alchemy);
-        const Contract = new hre.ethers.Contract(
-            process.env.CONTRACT_ADDRESS,
-            abi,
-            userWallet
-        )
-        const setTx1 = await Contract.purchase(merchant,  orderValue,  maxReturnPeriod);
-        await setTx1;
-        res.status(200).json({
-            msg: 'Success!',
-            token: setTx1
-        });
-    } catch (err) {
-        res.status(500).json({
-            msg: `Server Error: ${err}`
-        })
-    }
-}
+        const order = req.body;
 
-// uint256 id
-module.exports.getOrders = async function (req, res) {
-    try {
-        const {id} = req.body;
         const alchemy = new hre.ethers.AlchemyProvider(
             'maticmum',
             process.env.ALCHEMY_API_KEY
@@ -408,39 +353,15 @@ module.exports.getOrders = async function (req, res) {
             abi,
             userWallet
         )
-        const setTx1 = await Contract.getOrders(id);
+        const setTx1 = await Contract.purchase(order[0].merchant,  order[0].orderValue);
         await setTx1;
-        res.status(200).json({
-            msg: 'Success!',
-            token: setTx1
-        });
-    } catch (err) {
-        res.status(500).json({
-            msg: `Server Error: ${err}`
-        })
-    }
-}
+        const setTx2 = await Contract.purchase(order[1].merchant,  order[1].orderValue);
+        await setTx1;
 
-// uint256 id
-module.exports.cancelOrder = async function (req, res) {
-    try {
-        const {id} = req.body;
-        const alchemy = new hre.ethers.AlchemyProvider(
-            'maticmum',
-            process.env.ALCHEMY_API_KEY
-        );
-        const userWallet = new hre.ethers.Wallet(req.user.id, alchemy);
-        const Contract = new hre.ethers.Contract(
-            process.env.CONTRACT_ADDRESS,
-            abi,
-            userWallet
-        )
-        const setTx1 = await Contract.cancelOrder(id);
-        await setTx1;
         res.status(200).json({
-            msg: 'Success!',
-            token: setTx1
+            msg: 'Success!'
         });
+
     } catch (err) {
         res.status(500).json({
             msg: `Server Error: ${err}`
