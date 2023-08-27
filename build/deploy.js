@@ -13,4 +13,4 @@ main().catch((error) => {
   process.exitCode = 1;
 });
 // npx hardhat compile 
-// npx hardhat run scripts/deploy.js --network mumbai
+// npx hardhat run build/deploy.js --network mumbai

@@ -152,9 +152,9 @@ contract LoyaltyProgram {
             if(discount > reward.disMaxVal) discount = reward.disMaxVal;
             payableAmount = payableAmount.sub(discount);
 
-            customerCoin[msg.sender][merchant] = customerCoin[msg.sender][merchant].add(reward.coinValue);
+            customerCoin[msg.sender][merchant] = customerCoin[msg.sender][merchant].sub(reward.coinValue);
 
-            rewards[merchant][index].quantOver = rewards[merchant][index].quantOver.add(1);
+            rewards[merchant][index].quantOver = rewards[merchant][index].quantOver.sub(1);
             
             logTransaction(merchant, "Redeem", reward.coinValue);
         }
