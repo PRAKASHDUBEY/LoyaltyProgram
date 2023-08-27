@@ -1,13 +1,10 @@
-# Sample Hardhat Project
+# Loyalty Program
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.
-
-Try running some of the following tasks:
+The project to cater the need of loyalty of customer to individual seller in parallel to Ecommerce Platform with the help of block-chain technology.
 
 ```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat run scripts/deploy.js
+npx hardhat compile
+npx hardhat run build/deploy.js --network mumbai
+npx hardhat run build/execute.js
+npm start
 ```
