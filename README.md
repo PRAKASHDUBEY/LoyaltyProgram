@@ -1,6 +1,8 @@
 # Loyalty Program
 
-The project to cater the need of loyalty of customer to individual seller in parallel to Ecommerce Platform with the help of block-chain technology.
+A block-chain based project.
+
+## Getting Started
 
 ```shell
 npx hardhat compile
